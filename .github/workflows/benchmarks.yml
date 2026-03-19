@@ -4,129 +4,36 @@ on:
   push:
     branches: ['*']
     tags: ['*']
-    paths:
-      - '**/*.cs'
-      - '**/*.csproj'
-      - '**/*.sln'
-      - 'Algorithm.CSharp/Benchmarks/**'
-      - 'Algorithm.Python/Benchmarks/**'
-      - 'run_benchmarks.py'
-      - 'compare_benchmarks.py'
-      - '.github/workflows/benchmarks.yml'
   pull_request:
     branches: [master]
-    paths:
-      - '**/*.cs'
-      - '**/*.csproj'
-      - '**/*.sln'
-      - 'Algorithm.CSharp/Benchmarks/**'
-      - 'Algorithm.Python/Benchmarks/**'
-      - 'run_benchmarks.py'
-      - 'compare_benchmarks.py'
-      - '.github/workflows/benchmarks.yml'
-
-# Cancel in-flight benchmark runs for the same branch
-concurrency:
-  group: benchmarks-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  # ──────────────────────────────────────────────
-  # Job 1: Build + benchmark upstream Lean master
-  # ──────────────────────────────────────────────
-  bench-master:
+  build:
     runs-on: self-hosted
     container:
-      image: quantconnect/lean:foundation
-      volumes:
-        - /nas:/Data
+        image: quantconnect/lean:foundation
+        volumes:
+          - /nas:/Data
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v2
 
-      - name: Cache NuGet packages (master)
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-master-${{ hashFiles('**/QuantConnect.Lean.sln') }}
-          restore-keys: nuget-master-
-
-      - name: Checkout Lean master
-        uses: actions/checkout@v4
+      - name: Checkout Lean Master
+        uses: actions/checkout@v2
         with:
           repository: QuantConnect/Lean
           path: LeanMaster
           ref: 'master'
-
-      - name: Build Lean master
+      - name: Build Lean Master
         run: dotnet build --verbosity q /p:Configuration=Release /p:WarningLevel=1 LeanMaster/QuantConnect.Lean.sln
 
-      - name: Run benchmarks (master)
-        run: cp run_benchmarks.py LeanMaster/run_benchmarks.py && cd LeanMaster && python run_benchmarks.py /Data
-
-      - name: Upload master results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-master
-          path: LeanMaster/benchmark_results.json
-          retention-days: 3
-
-  # ──────────────────────────────────────────────
-  # Job 2: Build + benchmark the current branch
-  # ──────────────────────────────────────────────
-  bench-branch:
-    runs-on: self-hosted
-    container:
-      image: quantconnect/lean:foundation
-      volumes:
-        - /nas:/Data
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache NuGet packages (branch)
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-branch-${{ hashFiles('**/QuantConnect.Lean.sln') }}
-          restore-keys: nuget-branch-
+      - name: Run Benchmarks Master
+        run: cp run_benchmarks.py LeanMaster/run_benchmarks.py && cd LeanMaster && python run_benchmarks.py /Data && cd ../
 
       - name: Build
         run: dotnet build --verbosity q /p:Configuration=Release /p:WarningLevel=1 QuantConnect.Lean.sln
 
-      - name: Run benchmarks
+      - name: Run Benchmarks
         run: python run_benchmarks.py /Data
 
-      - name: Upload branch results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-branch
-          path: benchmark_results.json
-          retention-days: 3
-
-  # ──────────────────────────────────────────────
-  # Job 3: Compare (depends on both builds)
-  # ──────────────────────────────────────────────
-  compare:
-    needs: [bench-master, bench-branch]
-    runs-on: self-hosted
-    container:
-      image: quantconnect/lean:foundation
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          sparse-checkout: compare_benchmarks.py
-          sparse-checkout-cone-mode: false
-
-      - name: Download master results
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-master
-          path: results/master/
-
-      - name: Download branch results
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-branch
-          path: results/branch/
-
-      - name: Compare benchmarks
-        run: python compare_benchmarks.py results/master/benchmark_results.json results/branch/benchmark_results.json
+      - name: Compare Benchmarks
+        run: python compare_benchmarks.py LeanMaster/benchmark_results.json benchmark_results.json
